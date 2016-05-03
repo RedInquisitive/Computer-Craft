@@ -1,0 +1,19 @@
+for move=1,4 do
+  for i=1,127 do
+    term.clear()
+    term.setCursorPos(1,1)
+    term.write(i .. "/127 of " .. move)
+    while not turtle.forward() do
+      turtle.dig()
+    end
+  end
+  turtle.select(1)
+  turtle.placeDown()
+  turtle.up()
+  turtle.select(2)
+  turtle.placeDown()
+  turtle.turnRight()
+  turtle.forward()
+  turtle.down()
+end
+    

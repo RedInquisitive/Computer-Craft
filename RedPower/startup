@@ -1,0 +1,415 @@
+--config
+monitor = peripheral.wrap("right")
+
+--names subtable descriptors. Used to reduce magic numbers
+NAME, WIRE, CURRENT_POWER, MAXIMUM_POWER, DELTA_POWER = 1,2,3,4,5
+names =  {
+	{"Machine (Main)",
+	"tile_thermalexpansion_cell_resonant_name_21", 0, 0},
+	{"Resonant (Main)",
+	"tile_thermalexpansion_cell_resonant_name_0", 0, 0},
+	{"Buffer Top (1)",
+	"tile_thermalexpansion_cell_resonant_name_1", 0, 0},
+	{"Buffer (2)",
+	"tile_thermalexpansion_cell_resonant_name_2", 0, 0},
+	{"Buffer (3)",
+	"tile_thermalexpansion_cell_resonant_name_3", 0, 0},
+	{"Buffer (4)",
+	"tile_thermalexpansion_cell_resonant_name_4", 0, 0},
+	{"Buffer (5)",
+	"tile_thermalexpansion_cell_resonant_name_17", 0, 0},
+	{"Buffer (6)",
+	"tile_thermalexpansion_cell_resonant_name_18", 0, 0},
+	{"Buffer (7)",
+	"tile_thermalexpansion_cell_resonant_name_19", 0, 0},
+	{"Buffer (8)",
+	"tile_thermalexpansion_cell_resonant_name_5", 0, 0},
+	{"Buffer (9)",
+	"tile_thermalexpansion_cell_resonant_name_20", 0, 0},
+}
+bigreator = peripheral.wrap("BigReactors-Reactor_0")
+
+--static vars
+MON_X,MON_Y = monitor.getSize()
+COL_NAME_X = 1
+COL_REMAINING_X = 19
+COL_MAXIMUM_X = 29
+COL_PERCENT_X = 40
+POWER_ROW_OFFSET = 0
+TOTAL_ROW_OFFSET = MON_Y - 4
+BUTTON = MON_Y - 7 --3 tall
+MAX_THINGS_PER_PAGE = 8
+
+--private vars
+reactor_enabled = false
+powLastCurrent = 0
+offset = 0
+loadingwait = 0
+
+--reset monitor
+function reset()
+	monitor.setTextScale(1)
+	monitor.setTextColor(colors.white)
+	monitor.clear()
+	monitor.setCursorPos(1,1)
+end
+
+function clearnum(starting, ending) 
+	x,y = monitor.getCursorPos()
+	for i=1, ending - starting do
+		monitor.write(" ")
+	end
+	monitor.setCursorPos(x,y)
+end
+
+function react(percent) 
+	--sometimes the big reactor likes to overflow... This stops that.
+	bigenergy = bigreator.getEnergyStored()
+	if bigenergy > 1000000 then
+		bigreator.setActive(false)
+	end
+	if bigenergy < 1000 then
+		bigreator.setActive(true)
+	end
+	if percent < 90 and not reactor_enabled then
+		redstone.setOutput("left", true)
+		bigreator.setActive(true)
+		reactor_enabled = true
+	end
+	if percent > 95 and reactor_enabled then
+		redstone.setOutput("left", false)
+		bigreator.setActive(false)
+		reactor_enabled = false
+	end
+	return percent
+end
+
+function disptotal(row, powCurrent, powTotal)
+	monitor.setCursorPos(COL_NAME_X,row)
+	monitor.write("Total: ")
+	
+	monitor.setCursorPos(COL_REMAINING_X,row) clearnum(COL_REMAINING_X, COL_MAXIMUM_X) 
+	monitor.write(tostring(powCurrent))
+	
+	monitor.setCursorPos(COL_MAXIMUM_X,row)
+	monitor.write(tostring("/" .. powTotal))
+	
+	monitor.setCursorPos(COL_PERCENT_X,row) clearnum(COL_PERCENT_X, COL_PERCENT_X + 4) 
+	percent =  math.floor(((powCurrent / powTotal) * 100) + 0.5)
+	monitor.write(react(percent) .. "%")
+	progress(percent, row + 3)
+	progress(percent, row + 4)
+end
+
+function dispmissing(row, powCurrent, powTotal)
+	monitor.setCursorPos(COL_NAME_X,row)
+	monitor.write("Missing: ")
+	
+	monitor.setCursorPos(COL_REMAINING_X,row) clearnum(COL_REMAINING_X, COL_MAXIMUM_X) 
+	monitor.write(tostring(powTotal - powCurrent))
+	
+	monitor.setCursorPos(COL_MAXIMUM_X,row)
+	monitor.write(tostring("/" .. powTotal))
+	
+	monitor.setCursorPos(COL_PERCENT_X,row) clearnum(COL_PERCENT_X, COL_PERCENT_X + 4)
+	percent = math.floor((((powTotal - powCurrent) / powTotal) * 100) + 0.5)
+	monitor.write(percent .. "%")
+end
+
+function dispdelta(row, powCurrent, powMax)
+	--This function will just write 00:00:03 or something if  the power is almost full.
+	--Instead, simply say that the power is full and return out of the function.
+	if powMax - powCurrent < 1000 then		--FIXME: Magic Number
+		monitor.setTextColor(colors.green)
+		monitor.setCursorPos(1,row)
+		clearnum(1, MON_X)
+		monitor.write("Delta: Full")
+		monitor.setTextColor(colors.white)
+		return
+	end
+	
+	--The same applies to when the power is almost empty.
+	if powCurrent < 1000 then				--FIXME: Magic Number
+		monitor.setTextColor(colors.red)
+		monitor.setCursorPos(1,row)
+		clearnum(1, MON_X)
+		monitor.write("Delta: Empty")
+		monitor.setTextColor(colors.white)
+		return
+	end
+	
+	pertick = 0
+	for i=1, table.getn(names) do 
+		pertick = pertick + names[i][DELTA_POWER]
+	end
+	
+	--Green for an increasing delta, red otherwise.
+	if pertick > 0 then
+		monitor.setTextColor(colors.green)
+	else
+		monitor.setTextColor(colors.red)
+	end
+	
+	--Writes the amount of  time the running average consists of.
+	monitor.setCursorPos(COL_NAME_X,row)
+	clearnum(1, MON_X)
+	monitor.write("Delta:")
+	
+	--Write the actual delta RF per tick.
+	monitor.setCursorPos(COL_REMAINING_X,row) clearnum(COL_REMAINING_X, COL_MAXIMUM_X) 
+	monitor.write(tostring(math.floor(pertick)))
+	
+	--Does some math for the amount of time remaining until either full or empty.
+	monitor.setCursorPos(COL_MAXIMUM_X,row)
+	if pertick > 0 then
+		seconds = math.floor(((powMax - powCurrent) / (pertick * 20)) % 60)
+		minutes = math.floor(((powMax - powCurrent) / (pertick * 20 * 60)) % 60)
+		hours = math.floor(((powMax - powCurrent) / (pertick * 20 * 60 * 60)))
+		if hours < 99 then
+			monitor.write(string.format("/%02d:%02d:%02d until full", hours, minutes, seconds))
+		else
+			monitor.write("/a long time")
+		end
+	else 
+		pertick = pertick * -1
+		seconds = math.floor((powCurrent / (pertick * 20)) % 60)
+		minutes = math.floor((powCurrent / (pertick * 20 * 60)) % 60)
+		hours = math.floor((powCurrent / (pertick * 20 * 60 * 60)))
+		if hours < 99 then
+			monitor.write(string.format("/%02d:%02d:%02d until empty", hours, minutes, seconds))
+		else
+			monitor.write("/a long time")
+		end
+	end
+	monitor.setTextColor(colors.white)
+end
+
+function progress(percent, row)
+	--Calculate how many bars we need to fill.
+	bars = math.floor(((MON_X / 100) * percent))
+	monitor.setCursorPos(1, row)
+	
+	--Some numbers that represent the  fullness based on color.
+	if percent > 50 then
+		monitor.setBackgroundColor(colors.green)
+	elseif percent > 25 then
+		monitor.setBackgroundColor(colors.yellow)
+	else
+		monitor.setBackgroundColor(colors.red)
+	end
+	
+	--Write the progress bar to the screen. Make sure you print the [    ] too.
+	for i=1, bars do
+		if i==1 then
+			monitor.write("[")
+		elseif i==MON_X then
+			monitor.write("]")
+		else
+			monitor.write(" ")
+		end
+	end
+	
+	--Now, write the remaining part of the progress bar.
+	monitor.setBackgroundColor(colors.gray)
+	for i=bars+1, MON_X do
+		if i==MON_X then
+			monitor.write("]")
+		else
+			monitor.write(" ")
+		end
+	end
+	
+	--If there were no bars to write, we still need to cover the opening [. I decided to make
+	--it pretty and show the word Empty. It'll only be centered on 5 wide monitors, however.
+	if bars==0 then
+		monitor.setCursorPos(1, row)
+		monitor.write("[                      Empty") --FIXME: Should be calculated???
+	end
+	monitor.setBackgroundColor(colors.black)
+end
+
+function header()
+	--Shows a nice red header at the top of the screen.
+	monitor.setBackgroundColor(colors.red)
+	monitor.setCursorPos(1, 1)
+	for i=1, MON_X do
+		monitor.write(" ")
+	end
+	monitor.setCursorPos(COL_NAME_X,1)
+	monitor.write("Name:")
+	monitor.setCursorPos(COL_REMAINING_X,1)
+	monitor.write("Remain:")
+	monitor.setCursorPos(COL_MAXIMUM_X,1)
+	monitor.write("Max:")
+	monitor.setCursorPos(COL_PERCENT_X,1)
+	monitor.write("Percent:")
+	monitor.setBackgroundColor(colors.black)
+end
+
+function buttonprevious(loading) 
+	--Make color gray if there are no pages to the left
+	if offset == 0 then
+		monitor.setBackgroundColor(colors.gray)
+	else
+		monitor.setBackgroundColor(colors.blue)
+	end
+	
+	--write button to the LEFT
+	monitor.setCursorPos(1, BUTTON)
+	monitor.write("          ")
+	monitor.setCursorPos(1, BUTTON+1)
+	
+	--Display the word loading so the interface feels responsive
+	if not loading and loadingwait == 0 then
+		monitor.write(" Previous ")
+	end
+	if loading then
+		monitor.write("  Loading ")
+		loadingwait = 2
+		if loadingwait > 0 then
+			loadingwait = loadingwait - 1
+		end
+	end
+	
+	--Complete the bottom of the button.
+	monitor.setCursorPos(1, BUTTON+2)
+	monitor.write("          ")
+	monitor.setBackgroundColor(colors.black)
+end 
+
+function buttonnext(loading)
+	--Make color gray if there are no pages to the right
+	if offset + MAX_THINGS_PER_PAGE  >= table.getn(names) then
+		monitor.setBackgroundColor(colors.gray)
+	else
+		monitor.setBackgroundColor(colors.blue)
+	end
+	
+	--write button to the RIGHT
+	monitor.setCursorPos(MON_X-9, BUTTON)
+	monitor.write("          ")
+	monitor.setCursorPos(MON_X-9, BUTTON+1)
+	
+	--Display the word loading so the interface feels responsive
+	if not loading and loadingwait == 0 then
+		monitor.write("   Next   ")
+	end
+	if loading then
+		monitor.write("  Loading ")
+		loadingwait = 2
+		if loadingwait > 0 then
+			loadingwait = loadingwait - 1
+		end
+	end
+	
+	--Complete the bottom of the button.
+	loadingwait = loadingwait - 1
+	monitor.setCursorPos(MON_X-9, BUTTON+2)
+	monitor.write("          ")
+	monitor.setBackgroundColor(colors.black)
+end
+
+--begin
+reset()
+monitor.write("Binding...")
+binds = {}
+for i=1, table.getn(names) do
+	binds[i] = peripheral.wrap(names[i][WIRE])
+end
+reset()
+header()
+
+function mainprogram() 
+	powTotal = 0
+	
+	--Gets the maximum power for all devices and saves it in names[i][MAXIMUM_POWER]
+	--Also adds up all of the total power.
+	for i=1, table.getn(names) do
+		names[i][MAXIMUM_POWER] = binds[i].getMaxEnergyStored()
+		powTotal = powTotal + names[i][MAXIMUM_POWER]
+	end
+	
+	--Begin main loop
+	while true do
+		powCurrent = 0
+		
+		--Calculates the delta energy.
+		--Also adds up all of the current power.
+		for i=1, table.getn(names) do
+			singlePastEnergy = binds[i].getEnergyStored()
+			singleCurrentEnergy = binds[i].getEnergyStored() 
+			names[i][DELTA_POWER] = singleCurrentEnergy - singlePastEnergy
+			names[i][CURRENT_POWER] = singleCurrentEnergy
+			powCurrent = powCurrent + singleCurrentEnergy
+		end
+		
+		--Draws all of the current progress bars on the screen.
+		for i=1, table.getn(names) do
+			percent =  math.floor(((names[i][CURRENT_POWER] / names[i][MAXIMUM_POWER]) * 100) + 0.5)
+			if i > offset and i <= offset + MAX_THINGS_PER_PAGE then
+				monitor.setCursorPos(COL_NAME_X,		(i - offset)*2+POWER_ROW_OFFSET) clearnum(1, COL_REMAINING_X)
+				monitor.write(							names[i][NAME])
+				monitor.setCursorPos(COL_REMAINING_X,	(i - offset)*2+POWER_ROW_OFFSET) clearnum(COL_REMAINING_X, COL_MAXIMUM_X) 
+				monitor.write(tostring(					names[i][CURRENT_POWER]))
+				monitor.setCursorPos(COL_MAXIMUM_X,		(i - offset)*2+POWER_ROW_OFFSET) clearnum(COL_MAXIMUM_X, COL_PERCENT_X) 
+				monitor.write("/" .. tostring(			names[i][MAXIMUM_POWER]))
+				monitor.setCursorPos(COL_PERCENT_X,		(i - offset)*2+POWER_ROW_OFFSET) clearnum(COL_MAXIMUM_X, COL_PERCENT_X + 4) 
+				monitor.write(							percent .. "%")
+				progress(percent, (i - offset)*2+POWER_ROW_OFFSET + 1)
+			end
+		end
+		
+		--If the page we are on has empty progress bars (they don't go all the way to the bottom of the page)
+		--then clear out the ones that would be there.  Otherwise the old ones would ghost on the screen.
+		for i = table.getn(names) + 1, offset +  MAX_THINGS_PER_PAGE do
+			monitor.setCursorPos(1,(i - offset)*2+POWER_ROW_OFFSET)
+			clearnum(1, MON_X + 1)
+			monitor.setCursorPos(1,(i - offset)*2+POWER_ROW_OFFSET + 1)
+			clearnum(1, MON_X + 1)
+		end
+		
+		buttonprevious(false) 
+		buttonnext(false)
+		
+		--Total system power.
+		disptotal(TOTAL_ROW_OFFSET, powCurrent, powTotal)
+		dispmissing(TOTAL_ROW_OFFSET + 1, powCurrent, powTotal)
+		
+		--Delta
+		dispdelta(TOTAL_ROW_OFFSET + 2, powCurrent, powTotal)
+		
+		--Save current for next delta calc.
+		powLastCurrent = powCurrent
+	end
+end
+
+function input()
+	while true do
+		--Gets the event of the connected monitor.
+		event, side, xPos, yPos = os.pullEvent("monitor_touch")
+		
+		--If we are in range of the buttons  on the Y pos.
+		if yPos >= BUTTON and yPos <= BUTTON + 3 then
+		
+			--And we select the previous button
+			if xPos >= 1 and xPos <= 1 + 9 then
+				if offset > 0 then
+					offset = offset - MAX_THINGS_PER_PAGE
+					buttonprevious(true) 
+					buttonnext(true)
+				end
+			end
+			
+			--And we select the next button
+			if xPos >= MON_X-9 and xPos <= MON_X then
+				if table.getn(names) > offset + MAX_THINGS_PER_PAGE then
+					offset = offset + MAX_THINGS_PER_PAGE
+					buttonprevious(true) 
+					buttonnext(true)
+				end
+			end
+		end
+	end
+end
+
+parallel.waitForAny(mainprogram,input)

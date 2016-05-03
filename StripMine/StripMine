@@ -1,0 +1,283 @@
+term.clear()
+term.setCursorPos(1,1)
+distBetweenShaft = "DIST"
+distBetweenTorch = "DIST"
+lengthOfShafts = "LENGTH"
+amountOfShafts = "AMOUNT"
+enderChests = "NO"
+
+varPressed = false
+varCont = true
+
+blocksMined = 0
+timesAttacked = 0
+
+print("Welcome to Red's Strip Mine")
+print("To the End version.")
+print("First, I need some distances.")
+print()
+print("How many blocks between shafts? (2)")
+while type(distBetweenShaft) == "string" or distBetweenShaft == nil do 
+  term.write("> ")
+  distBetweenShaft = tonumber(read())
+end
+print()
+print("How many blocks between torches? (SLOT 1)(7)")
+while type(distBetweenTorch) == "string" or distBetweenTorch == nil do 
+  term.write("> ")
+  distBetweenTorch = tonumber(read())
+end 
+term.clear()
+term.setCursorPos(1,1)
+print("Next, I need some options.")
+print()
+print("How long are the shafts? (32)")
+while type(lengthOfShafts) == "string" or lengthOfShafts == nil do 
+  term.write("> ")
+  lengthOfShafts = tonumber(read())
+end
+print()
+print("How many iterations? (16)")
+while type(amountOfShafts) == "string" or amountOfShafts == nil do 
+  term.write("> ")
+  amountOfShafts = tonumber(read())
+end 
+print()
+print("Can you use ender chests? (SLOT 2)(n)")
+while type(enderChests) == "string" or enderChests == nil do 
+  term.write("> ")
+  enderChests = (read() == "y")
+end
+term.clear()
+term.setCursorPos(1,1)
+print("Sweet, just put some fuel in SLOT 3 and some building block in SLOT 4 and I'll start!")
+print()
+sleep(5)
+
+function placeChest()
+  if turtle.getItemCount(16) > 0 then
+    term.clear()
+    term.setCursorPos(1,1)
+    print("INFO: Placed a chest.")
+    turtle.select(2)
+    while turtle.placeDown() == false do
+      turtle.digDown()
+    end
+    for i = 5, 16, 1 do
+      turtle.select(i)
+      if turtle.getItemCount(i) > 0 then
+	    while turtle.dropDown() == false do
+	      term.clear()
+          term.setCursorPos(1,1)
+          print("ERROR: CANNOT EMPTY! Place chest below me to continue!")
+        end
+      end
+    end
+    turtle.select(4)
+    if enderChests == true then
+      turtle.select(2)
+      while turtle.digDown() == false do
+	  end
+    end
+  end
+end
+	
+function updateStats()
+  while varPressed == true do
+    sleep(0)
+  end
+  term.clear()
+  term.setCursorPos(1,1)
+  print("Press P to pause.")
+  print("Blocks mined: " .. blocksMined)
+  print("Times attacked: " .. timesAttacked)
+  print("Fuel left: " .. turtle.getFuelLevel() )
+  print("Ender chests: " .. tostring(enderChests))
+  while turtle.getFuelLevel() < 100 do
+    term.clear()
+    term.setCursorPos(1,1)
+	print("ERROR: Low fuel! Add some fuel in slot 3!")
+	turtle.select(3)
+	turtle.refuel()
+  end
+  placeChest()
+end
+
+function moveForward()
+  local x = 0
+  while turtle.forward() == false do
+    if turtle.dig() == true then
+      blocksMined = blocksMined + 1
+    end
+    x = x + 1
+    if x > 30 then
+      if turtle.attack() == true or turtle.attackUp() == true or turtle.attackDown() == true then
+        timesAttacked = timesAttacked + 1
+      end
+    end
+  end
+  updateStats()
+end
+
+function moveUp()
+  local x = 0
+  while turtle.up() == false do
+    if turtle.digUp() == true then
+	  blocksMined = blocksMined + 1
+	end
+	x = x + 1
+	if x > 30 then
+	  if turtle.attack() == true or turtle.attackUp() == true or turtle.attackDown() == true then
+	    timesAttacked = timesAttacked + 1
+	  end
+	end
+  end
+  updateStats()
+end
+
+function moveDown()
+  local x = 0
+  while turtle.down() == false do
+	if turtle.digDown() == true then
+	  blocksMined = blocksMined + 1
+	end
+	x = x + 1
+	if x > 30 then
+	  if turtle.attack() == true or turtle.attackUp() == true or turtle.attackDown() == true then
+	    timesAttacked = timesAttacked + 1
+	  end
+	end
+  end
+  updateStats()
+end
+
+function mineThree()
+  moveForward()
+  while turtle.detectUp() == true or turtle.detectDown() == true do
+    if turtle.digUp() == true then
+	  blocksMined = blocksMined + 1
+    end
+    if turtle.digDown() == true then
+	  blocksMined = blocksMined + 1
+    end
+  end
+  updateStats()
+end
+
+function mineTwo()
+  moveForward()
+  while turtle.detectUp() == true do
+    if turtle.digUp() == true then
+	  blocksMined = blocksMined + 1
+    end
+  end
+  updateStats()
+end
+
+function placeTorch() 
+  turtle.turnRight() 
+  turtle.select(4)
+  turtle.place()
+  turtle.select(1) 
+  moveUp()
+  turtle.dig()
+  turtle.select(1)
+  while turtle.place() == false do
+    if turtle.dig() == true then
+      blocksMined = blocksMined + 1
+	end
+  end
+  turtle.turnLeft()
+  moveDown()
+  updateStats()
+end
+
+function detectLow() 
+  if turtle.detectDown() == false then
+    turtle.select(4)
+    turtle.placeDown()
+    turtle.select(1)
+  end
+end
+
+moveUp()
+
+function startThing() 
+for p = 0, amountOfShafts,1 do
+  for i = 0, distBetweenShaft,1 do
+    mineThree()
+	turtle.turnLeft()
+	mineThree()
+	mineThree()
+	turtle.turnLeft()
+	turtle.turnLeft()
+	moveForward()
+	moveForward()
+	turtle.turnLeft()
+  end
+  moveDown()
+  turtle.turnRight()
+  for i = 0, lengthOfShafts,1 do
+    mineTwo()
+    detectLow()
+	if i % (distBetweenTorch + 1) == 0 then
+	  placeTorch()
+	end
+  end
+  turtle.turnLeft()
+  turtle.turnLeft()
+  moveUp()
+  for i = 0, lengthOfShafts,1 do
+    moveForward()
+  end
+  moveForward()
+  moveForward()
+  moveDown()
+  for i = 0, lengthOfShafts,1 do
+    mineTwo()
+    detectLow()
+	if i % (distBetweenTorch + 1) == 0 then
+	  placeTorch()
+	end
+  end
+  turtle.turnLeft()
+  turtle.turnLeft()
+  moveUp()
+  for i = 0, lengthOfShafts,1 do
+    moveForward()
+  end
+  moveForward()
+  moveForward()
+  turtle.turnLeft()
+end
+varCont = false
+end
+
+
+function doKeyThing()
+  while varCont do
+  local sEvent, param = os.pullEvent("key")
+  if sEvent == "key" then
+	if param == 25 then
+	  print("Type 'resume' to continue")
+	  varPressed = true
+	  local inthing = "NOPE"
+      while type(inthing) == "string" or inthing == nil or inthing == false do 
+        term.write("> ")
+        inthing = (read() == "resume")
+      end
+	  varPressed = false
+	end
+  end
+  end
+end
+
+
+parallel.waitForAll(doKeyThing, startThing)
+
+
+
+  
+    
+
+  

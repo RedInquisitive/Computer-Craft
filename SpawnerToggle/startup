@@ -1,0 +1,99 @@
+monitor = peripheral.wrap("monitor_0")
+textscale=1
+monitor.setTextScale(textscale)
+mon_x,mon_y = monitor.getSize()
+enabled = false
+wait = 0;
+spawn =  {
+	{"left", false, "Enderman"},
+	{"right", false, "Blizz"},
+	{"front", false, "Blaze"},
+}
+function reset()
+	monitor.setTextColor(colors.white)
+	monitor.setBackgroundColor(colors.black)
+	monitor.clear()
+	monitor.setCursorPos(1,1)
+end
+
+function disp()
+	maxlength = 0
+	for i=1,table.getn(spawn) do
+		length = string.len(spawn[i][3])
+		if  length > maxlength then
+			maxlength = length
+		end
+	end
+	maxlength = maxlength + 1
+	for i=1,table.getn(spawn) do
+		length = string.len(spawn[i][3])
+		padding = ""
+		for j=1,maxlength-length do
+			padding = padding .. " "
+		end
+		spawn[i][3] = spawn[i][3] .. padding
+	end
+	while true do
+		padding = ""
+		for i=1+maxlength,mon_x do
+			padding = tostring(padding .. " ")
+		end
+		for i=1,mon_y do
+			if i <= table.getn(spawn) then
+				if spawn[i][2] then
+					monitor.setBackgroundColor(colors.lime)
+				else
+					monitor.setBackgroundColor(colors.gray)
+				end
+				monitor.setCursorPos(1,i)
+				monitor.write(spawn[i][3])
+			end
+			if enabled then
+				monitor.setBackgroundColor(colors.green)
+			else
+				monitor.setBackgroundColor(colors.red)
+			end
+			monitor.setCursorPos(1+maxlength,i)
+			monitor.write(padding)
+		end
+		if enabled then
+			message = ">:)"
+		else
+			message = "off"
+		end
+		if wait > 0 then
+			message = wait .. "t"
+		end
+		x = math.floor((mon_x+maxlength)/2.0 - string.len(message)/2.0) + 1
+		y = math.floor((mon_y)/2.0) + 1
+		monitor.setCursorPos(x,y)
+		monitor.write(message)
+		redstone.setOutput("back", enabled)
+		redstone.setOutput("top", enabled)
+		for i=1, table.getn(spawn) do
+			redstone.setOutput(spawn[i][1], enabled and spawn[i][2])
+		end
+		sleep(0.2)
+		if wait > 0 then
+			wait = wait - 4 --0.2 sec is 4 ticks
+		end
+	end
+end
+
+function input()
+	while true do
+		event, side, xPos, yPos = os.pullEvent("monitor_touch")
+		if xPos > maxlength and yPos >= 1 then
+			enabled = not enabled
+			wait = 256
+		end
+		if xPos <= maxlength and yPos <= table.getn(spawn) then
+			spawn[yPos][2] = not spawn[yPos][2]
+		end
+		sleep(0.2)
+	end
+end
+
+reset()
+
+parallel.waitForAny(disp,input)
