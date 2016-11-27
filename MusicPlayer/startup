@@ -1,0 +1,223 @@
+BUTTON_COUNT = 4; --How many buttons per row
+MON_BUTTON_COUNT = 3; --How many buttons per row
+PADDING = 1
+MARGIN = 1
+Y_OFFSET = 1
+
+SONGS = peripheral.wrap("back")
+DRIVE = peripheral.wrap("drive_1")
+DIRECTION = "WEST"
+MON_SIDE = "monitor_1"
+MON = peripheral.wrap(MON_SIDE)
+
+LIST = {}
+HUMAN = {
+	{"portalgun:records.wantyougone", "gone", "Portal - Want you Gone"},
+	{"portalgun:records.stillalive", "alive", "Portal - Still Alive"},
+	{"portalgun:records.radioloop", "radio", "Portal - Radio Loop"},
+}
+
+TX, TY = term.getSize()
+MX, MY = MON.getSize()
+
+recolorid = 0
+nowPlaying = "UNKNOWN"
+
+oldPullEvent = os.pullEvent
+os.pullEvent = os.pullEventRaw
+MON.setTextScale(0.5)
+
+function clearScreen(dest)
+  dest.setCursorPos(1,1)
+  dest.setBackgroundColor(colors.black)
+  dest.setTextColor(colors.white)
+  dest.clear()
+end
+
+function createButton(name, screenWidth, buttonCount) 
+	local button = {}
+	local buttonWidth = math.floor(((screenWidth - MARGIN * 4 - (buttonCount - 1) * MARGIN * 2)/ buttonCount)) 
+	
+	--Create string of spaces that appear on the top and bottom of a button.
+	local space = string.rep(" ", buttonWidth)
+	
+	--Get the amount of padding we need around the text
+	local padnum = ((buttonWidth - (PADDING * 4)) - string.len(name)) / 2
+	
+	--If the space padding is some odd amount, we'll need to pad it with one more space
+	local extraspace = " "
+	if math.floor(padnum) == math.ceil(padnum) then extraspace = "" end
+	
+	--Creates the spacing based off of the names length
+	local textspace = string.rep(" ", math.floor(padnum))
+	
+	--Create a string of generic padding
+	--Also adds the appropriate amount of lines to the top of the button array
+	local textpad = string.rep("  ", PADDING)
+	local linenum = 1
+	for i = 1, PADDING do
+		button[linenum] = space
+		linenum = linenum + 1
+	end
+	button[linenum] = textpad .. textspace .. name .. extraspace .. textspace .. textpad
+	linenum = linenum + 1
+	for i = 1, PADDING do
+		button[linenum] = space
+		linenum = linenum + 1
+	end
+	return button
+end
+
+function display(dest, screenWidth, buttonCount)
+	clearScreen(dest)
+	local header = string.rep(" ", screenWidth)
+	local emptybutton = createButton("", screenWidth, buttonCount)
+	local buttonWidth = string.len(emptybutton[1])
+	local buttonHeight = #emptybutton
+	local x = MARGIN * 2 + 1
+	local y = MARGIN + 1 + Y_OFFSET
+	local rownum = 1
+	dest.setBackgroundColor(colors.gray)
+	dest.setCursorPos(1,1)
+	dest.write(header)
+	dest.setCursorPos(3,1)
+	dest.write("Now Playing: " .. nowPlaying)
+	for _,song in pairs(LIST) do
+		local button = createButton(song.label, screenWidth, buttonCount)
+		if song.slot == recolorid then
+			dest.setBackgroundColor(colors.green)
+		else
+			dest.setBackgroundColor(colors.blue)
+		end
+		local yoffset = 0
+		for _,line in pairs(button) do
+			dest.setCursorPos(x, y + yoffset)
+			dest.write(line)
+			yoffset = yoffset + 1
+		end
+		if rownum == buttonCount then
+			x = MARGIN * 2 + 1
+			y = y + buttonHeight + MARGIN
+			rownum = 0
+		else
+			x = x + buttonWidth + MARGIN * 2
+		end
+		rownum = rownum + 1
+	end
+end
+
+function clickWhat(clickx, clicky, screenWidth, buttonCount) 
+	local emptybutton = createButton("", screenWidth, buttonCount)
+	local buttonWidth = string.len(emptybutton[1])
+	local buttonHeight = #emptybutton
+	local x = MARGIN * 2 + 1
+	local y = MARGIN + 1 + Y_OFFSET
+	local rownum = 1
+	for _,song in pairs(LIST) do
+		if clickx >= x and clicky >= y and clickx < x + buttonWidth and clicky < y + buttonHeight then
+			return song.slot, song.longlabel
+		end
+		if rownum == buttonCount then
+			x = MARGIN * 2 + 1
+			y = y + buttonHeight + MARGIN
+			rownum = 0
+		else
+			x = x + buttonWidth + MARGIN * 2
+		end
+		rownum = rownum + 1
+	end
+	return 0, "UNKNOWN"
+end
+
+function setup()
+	SONGS.pullItem(DIRECTION, 1) --Get the music disk in the box if there is one.
+	sleep(1)
+end
+
+function loadSongs()
+	LIST = {}
+	local slotNumbers = SONGS.getAllStacks() --get all "Music Disks"
+	local count = 1
+	for slotnum,_ in pairs(slotNumbers) do
+		local metadata = SONGS.getStackInSlot(slotnum)
+		if metadata.disk then
+			local song = metadata.disk.label
+			local long = song
+			
+			--replace song name with human one if needed.
+			for _, human in pairs(HUMAN) do
+				if song == human[1] then
+					song = human[2]
+					long = human[3]
+				end
+			end
+			if string.sub(song, 1,7) == "C418 - " then
+				song = string.sub(song, 7, -1)
+			end
+			
+			--add needed data to our list
+			LIST[count] = {label = song, slot = slotnum, longlabel = long}
+			count = count + 1
+		end
+	end
+	LIST[count] = {label = "REPLAY", slot = -1, longlabel = "UNKNOWN"}
+end
+
+function play(id)
+	setup()
+	SONGS.pushItem(DIRECTION, id)
+	DRIVE.playAudio()
+end
+
+function replay()
+	DRIVE.playAudio()
+end
+
+function main()
+	while true do
+		loadSongs()
+		display(term, TX, BUTTON_COUNT)
+		display(MON, MX, MON_BUTTON_COUNT)
+		sleep(0.2)
+	end
+end
+
+function cursor()
+	while true do
+		local e,z,curX,curY = os.pullEvent()
+		if e == "mouse_drag" or e == "mouse_click" then
+			local id, name = clickWhat(curX, curY, TX, BUTTON_COUNT)
+			recolorid = id
+			if not (recolorid == -1 or recolorid == 0) then
+				nowPlaying = name
+			end
+		end
+		if e == "mouse_up" then
+			sleep(0.25)
+			if recolorid == -1 then
+				replay()
+			elseif not(recolorid == 0) then
+				play(recolorid)
+			end
+			sleep(0.25)
+			recolorid = 0
+		end
+		if e == "monitor_touch" then
+			local id, name = clickWhat(curX, curY, MX, MON_BUTTON_COUNT)
+			recolorid = id
+			sleep(0.25)
+			if recolorid == -1 then
+				replay()
+			elseif not(recolorid == 0) then
+				nowPlaying = name
+				play(recolorid)
+			end
+			sleep(0.25)
+			recolorid = 0
+		end
+	end
+end
+
+setup()
+parallel.waitForAny(main, cursor)
+os.pullEvent = oldPullEvent
